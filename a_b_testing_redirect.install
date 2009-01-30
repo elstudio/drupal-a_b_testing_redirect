@@ -1,0 +1,33 @@
+<?php
+
+function a_b_testing_redirect_install() {
+  drupal_install_schema('a_b_testing_redirect');
+}
+function a_b_testing_redirect_schema() {
+  $schema['a_b_testing_redirect'] =
+    array(
+      'description' => t('The table for the a b testing redirect node.'),
+      'fields' => array(
+        'nid' => array(
+          'description' => t('link to the node'),
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE),
+        'redirects' => array(
+          'description' => t('A serilized arra'),
+          'type' => 'text',
+          'not null' => TRUE,
+          'default' => ''),
+        ),
+      'unique keys' => array(
+        'nid' => array('nid'),
+        ),
+      'primary key' => array('nid'),
+      );
+  return $schema;
+}
+
+function a_b_testing_redirect_uninstall() {
+  // Drop my tables.
+  drupal_uninstall_schema('a_b_testing_redirect');
+}

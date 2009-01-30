@@ -1,0 +1,298 @@
+<?php
+// $Id: a_b_testing_redirect.module,v 1.40 2008/02/27 15:32:05 robloach Exp $
+
+
+
+
+/**
+ * define the a_b_testing_redirect node type
+ */
+function a_b_testing_redirect_node_info(){
+  return array(
+    'a_b_testing_redirect' => array(
+      'name' => t('A/B testing redirect'),
+      'module' => 'a_b_testing_redirect',
+      'description' => "This node allows a/b testing redirects",
+      'has_body' => false,
+    )
+  );
+}
+
+/**
+ * Form for the a_b_testing_redirect node type 
+ */
+function a_b_testing_redirect_form($node){
+  $nid = $node->nid;
+  $values = variable_get("a_b_testing_redirect_$nid", array());
+  if (isset($node->redirects)) {
+    foreach($node->redirects as $redirect) {
+      $redirect_string .= "$redirect\n";
+    }
+  }
+  // We need to define form elements for the node's title and body.
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => $type->title_label,
+    '#required' => TRUE,
+    '#default_value' =>$node->title,
+  );
+    $form['redirects-text'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Test Pages'),
+    '#required' => TRUE,
+    '#description' => t('List one page per line, they can be internal paths or external paths (if external include http:// or https://)'),
+    '#default_value' =>$redirect_string,
+  );
+  $form["#submit"][] ="a_b_testing_redirect_form_submit";
+  return $form;
+}
+/**
+ * submit function for a_b_testing_redirect form sumbit
+ */
+function a_b_testing_redirect_form_submit($form, &$form_state) {
+
+
+  $old_redirects = $form["#node"]->redirects;
+  foreach( _a_b_testing_redirect_node_list($old_redirects) as $nid) {
+    drupal_set_message($nid);
+    _a_b_testing_redirect_remove_in_testing_term($nid);
+  }
+  $redirect_string = $form_state["values"]["redirects-text"];
+  $redirect_raw = split("\n", $redirect_string);
+  foreach ($redirect_raw as $path) {
+    if (trim($path) == '') {
+      continue;
+    }
+    $redirects[] = trim($path);
+  }
+  
+  $form_state["values"]["redirects"] = $redirects;
+}
+
+/**
+ * Sets access for the a_b_testing_redirect node type
+ */
+function a_b_testing_redirect_access(){
+  if ($op == 'view') {
+    // Only users with permission to do so may create this node type.
+    return user_access('access content');
+  }
+  if ($op == 'update' || $op == 'delete' || $op == 'create') {
+    user_access('administer a/b testing') ;
+  }
+
+}
+/**
+ * Insert function for the a_b_test_redirect node serializes redirects and 
+ * saves them to the database and adds tag to redirect nodes
+ */
+function a_b_testing_redirect_insert($node) {
+  foreach( _a_b_testing_redirect_node_list($node->redirects) as $nid) {
+  _a_b_testing_redirect_add_in_testing_term($nid);
+  }
+  db_query("INSERT INTO {a_b_testing_redirect} (nid, redirects) VALUES (%d, '%s')", $node->nid, serialize($node->redirects));
+}
+/**
+ * update function for the a_b_test_redirect node serializes redirects and 
+ * saves them to the database and adds tag to redirect nodes
+ */
+function a_b_testing_redirect_update($node){
+  foreach( _a_b_testing_redirect_node_list($node->redirects) as $nid) {
+  _a_b_testing_redirect_add_in_testing_term($nid);
+  }
+  db_query("UPDATE {a_b_testing_redirect} SET redirects= '%s' WHERE nid = %d", serialize($node->redirects), $node->nid);
+}
+/**
+ * delete function for the a_b_test_redirect node deletes redirects from
+ * the database and removes tags from redirect nodes
+ */
+function a_b_testing_redirect_delete($node) {
+  foreach( _a_b_testing_redirect_node_list($node->redirects) as $nid) {
+  _a_b_testing_redirect_remove_in_testing_term($nid);
+  }
+  db_query("DELETE FROM {a_b_testing_redirect} WHERE nid = %d", $node->nid);
+}
+/**
+ * Load function for the a_b_test_redirect node pulls the rediects from the database an dunserializes them
+ */
+function a_b_testing_redirect_load(&$node) {
+  $data = 
+      db_fetch_object(
+        db_query('SELECT redirects FROM {a_b_testing_redirect} WHERE nid = %d', $node->nid)
+      );
+
+  $redirects = 
+    unserialize($data->redirects);
+  $node->redirects = $redirects;
+}
+
+/* view function for a_b_testing_redirect node
+ * if page redirects to a random item in redirects array
+ * if node change the node info to a rand node that is in the redirect array
+ */
+function a_b_testing_redirect_view($node, $is_teaser, $is_page) {
+
+  if ($is_page) {
+    $path = $node->redirects[array_rand($node->redirects)];
+    drupal_goto($path,null, null, "307");
+  }
+  else {
+    $nids = _a_b_testing_redirect_node_list($node->redirects);
+    if ($nids) {
+      $node = node_load($nids[array_rand($nids)]);
+    }
+    else { $node = object();}
+  }
+  return $node;
+}
+/*
+ * add permistion for administrating a/b testing
+ */
+function a_b_testing_redirect_perm(){
+  return array('administer a/b testing');
+}
+/**
+ * define admin page and content list page menu items
+ */
+function a_b_testing_redirect_menu() {
+  $items = array();
+  $items['admin/settings/a_b_testing_redirect_settings'] = array(
+    'title' => 'A/B testing redirects settings',
+    'page callback' => 'a_b_testing_redirect_settings',
+    'access arguments' => array('administer a/b testing'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/content/a_b_testing_redirects'] = array(
+    'title' => 'A/B Testing Redirects',
+    'page callback' => 'a_b_testing_redirect_list',
+    'access arguments' => array('administer a/b testing'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  return $items;
+
+}
+/*
+ * admin page
+ */
+function a_b_testing_redirect_settings() {
+  return drupal_get_form("a_b_testing_redirect_settings_form");
+}
+/**
+ * admin form
+ */
+function a_b_testing_redirect_settings_form($form_state) {
+  $data =  db_query('SELECT tid, name FROM {term_data} ORDER BY name');
+  while ($row = db_fetch_object($data)) {
+    $tids[$row->tid] = $row->name;
+  }
+  $tid = variable_get("a_b_testing_redirect_in_testing_tid", false);
+  $use_term = variable_get("a_b_testing_redirect_use_term", false);
+  $form['use_term'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Tag Nodes In testing',
+    '#description' => 'Check if you want nodes that are in testing to be tag using taxonomy (that way they can be excluded from views and such)',
+    '#default_value' =>$use_term,
+  );
+  $form['tid'] = array(
+    '#type' => 'select',
+    '#title' => 'Tag to use',
+    '#description' => 'select the term used to tag nodes in testing',
+    '#options' => $tids,
+    '#default_value' =>$tid,
+  );
+  $form['submit'] = array (
+    '#type' => 'submit',
+    '#value' => 'save',
+  );
+  return $form;
+}
+/**
+ * admin submit
+ */
+function a_b_testing_redirect_settings_form_submit($form, &$form_state) {
+  $tid = $form_state['values']['tid'];
+  $use_term = $form_state['values']['use_term'];
+  variable_set("a_b_testing_redirect_use_term",$use_term);
+  variable_set("a_b_testing_redirect_in_testing_tid",$tid);
+}
+function a_b_testing_redirect_list() {
+
+  $data =  db_query("SELECT * FROM node n where type ='a_b_testing_redirect'");
+  while ($row = db_fetch_object($data)) {
+    $node = node_load($row->nid);
+    $nodes[$node->path] = $node;
+  }
+  ksort($nodes);
+  $i = 0;
+  $output = "
+    <table class = ''>
+      <tr>
+        <th>Path</th>
+        <th>Redirects</th>
+        <th></th>
+      </tr>
+  ";
+  foreach($nodes as $path => $node) {
+    $class = fmod($i,2) ? "even": "odd";
+    $nid = $node->nid;
+    foreach($node->redirects as $redirect) {
+      $redirect_string .="<div><a href = '$redirect'>$redirect</a></div>";
+    }
+    $output .= "
+      <tr class='$class'>
+        <td>$path</td>
+        <td>$redirect_string</td>
+        <td><a href = '/node/$nid/edit?destination=admin/content/a_b_testing_redirects'><img src ='/".drupal_get_path('module','a_b_testing_redirect')."/pencil.png' title='edit' /></td>
+      </tr>
+    ";
+  }
+
+  $output .="</table>";
+  return $output;
+}
+
+/*
+ * helper function to find redirect items that are nodes
+ */
+function _a_b_testing_redirect_node_list($redirects) {
+  foreach($redirects as $path) {
+    if ( !( $internal_path = drupal_lookup_path('source', $path) ) ) {
+      $internal_path = $path;
+    }
+    if (ereg ("node/([0-9]+)", $internal_path,$nid_array)) {
+      if ( node_load($nid_array[1]) ) {
+        $nids[] = $nid_array[1];
+      }
+    }
+  }
+  return $nids;
+
+}
+/*
+ * helper function for adding the in_testing_term to a node
+ */
+function _a_b_testing_redirect_add_in_testing_term($node) {
+  if (!is_object($node)){
+    $node = node_load($node);
+  }
+  $tid = variable_get("a_b_testing_redirect_in_testing_tid", false);
+  $use_term = variable_get("a_b_testing_redirect_use_term", false);
+  if ($tid && $use_term) {
+     db_query('DELETE FROM {term_node} WHERE nid = %d and tid = %d', $node->nid, $tid);
+     db_query('INSERT INTO {term_node} (nid, vid, tid) VALUES (%d, %d, %d)', $node->nid, $node->vid, $tid);
+  }
+}
+/*
+ * helper function for removing the in_testing_term from a node
+ */
+function _a_b_testing_redirect_remove_in_testing_term($node) {
+  if (!is_object($node)){
+    $node = node_load($node);
+  }
+  $tid = variable_get("a_b_testing_redirect_in_testing_tid", false);
+  $use_term = variable_get("a_b_testing_redirect_use_term", false);
+  if ($tid && $use_term) {
+     db_query('DELETE FROM {term_node} WHERE nid = %d and tid = %d', $node->nid, $tid);
+  }
+  
+}

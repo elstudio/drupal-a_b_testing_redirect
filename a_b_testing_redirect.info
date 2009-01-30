@@ -1,0 +1,12 @@
+; $Id: feeder.info,v 1.2 2008/02/27 15:32:05 robloach Exp $
+name = a_b_testing_redirect
+description = Creates Node type that redirect to other urls.
+core = 6.x
+package = "custom"
+
+; Information added by drupal.org packaging script on 2008-02-27
+version = "6.x-1.0"
+core = "6.x"
+project = "a_b_testing_redirect"
+datestamp = "1204126811"
+
